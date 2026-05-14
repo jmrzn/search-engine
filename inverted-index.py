@@ -6,7 +6,6 @@ download('punkt_tab')
 
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
-from nltk.corpus import stopwords
 from bs4 import BeautifulSoup
 from collections import defaultdict
 
@@ -24,7 +23,6 @@ def tokenize_text(text):
         token = token.lower()
         if not token.isalpha():
             continue
-
         token = stemmer.stem(token)
         result.append(token)
     return result
