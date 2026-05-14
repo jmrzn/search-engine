@@ -2,7 +2,6 @@ import os
 import json
 from nltk import download
 
-download('stopwords')
 download('punkt_tab')
 
 from nltk.tokenize import word_tokenize
@@ -16,7 +15,6 @@ unique_tokens = set()
 REPORT = "report.txt"
 
 stemmer = PorterStemmer()
-stop_words = set(stopwords.words('english'))
 
 def tokenize_text(text):
     result = []
@@ -25,9 +23,6 @@ def tokenize_text(text):
     for token in tokens:
         token = token.lower()
         if not token.isalpha():
-            continue
-
-        if token in stop_words:
             continue
 
         token = stemmer.stem(token)
