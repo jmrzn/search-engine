@@ -73,7 +73,7 @@ def save_index(output_file):
     return os.path.getsize(output_file) / 1024  # Size in KB
 
 def generate_report():
-    doc_id_counter = process_directory('test_developer')
+    doc_id_counter = process_directory('DEV')
     size_kb = save_index('inverted_index.json')
 
     with open(REPORT, "w") as f:
