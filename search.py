@@ -71,7 +71,7 @@ def generate_report():
             result = boolean_and_search(process_query(query), inverted_index)
             print(f"\nQuery: {query}", file=r)
             print(f"Top 5 URLs:", file=r)
-            for doc_id in result:
+            for doc_id in result[:5]:
                 print(url_map[doc_id], file=r)
 
 if __name__ == "__main__":
