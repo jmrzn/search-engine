@@ -73,19 +73,23 @@ def generate_report():
             print(f"Top 5 URLs:", file=r)
             for doc_id in result[:5]:
                 print(url_map[doc_id], file=r)
-                
+
+def search():
+    with open(INDEX_FILE, 'r') as f:
+        inverted_index = json.load(f)
+
+    url_map = build_url_map()
+
     # version that uses console input for queries rather than a set list
-    # with open(REPORT, "w") as r:
-    #     while True:
-    #         query = input("Enter a search query or type 'q' to quit: ").strip().lower()
-    #         if (query == "q" or query == "quit"):
-    #             break
-    #         result = boolean_and_search(process_query(query), inverted_index)
-    #         print(f"\nQuery: {query}", file=r)
-    #         print(f"Top 5 URLs:", file=r)
-    #         for doc_id in result[:5]:
-    #             print(url_map[doc_id], file=r)
-    #         r.flush() # write buffered content to report immediately
+    while True:
+        query = input("Enter a search query or type 'q' to quit: ").strip().lower()
+        if (query == "q" or query == "quit"):
+            break
+        result = boolean_and_search(process_query(query), inverted_index)
+        print(f"\nQuery: {query}")
+        print(f"Top 5 URLs:")
+        for doc_id in result[:5]:
+            print(url_map[doc_id])
 
 if __name__ == "__main__":
-    generate_report()
+    search()
