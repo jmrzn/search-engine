@@ -1,5 +1,6 @@
 import os
 import json
+import math
 from nltk import download
 
 download('punkt_tab')
@@ -59,6 +60,32 @@ def boolean_and_search(query_terms, index):
         result_set &= {p['docID'] for p in posting}
     return list(result_set)
 
+def compute_idf(index, num_docs):
+    idfs = {}
+    for term, postings in index.items():
+        idf = math.log(num_docs / len(postings))
+        idfs[term] = idf
+    return idfs
+
+def rank_by_tfidf(search_result, query_terms, index, idf):
+    scores = {}
+    
+    for term in query_terms:
+        if term not in index:
+            continue
+
+        for posting in index[term]:
+            docID = posting['docID']
+            if docID not in search_result:
+                continue
+
+            tf = 1 + math.log(posting["term_freqs"])
+            tfidf = tf * idf.get(term, 0)
+            scores[docID] = scores.get(docID, 0) + tfidf
+    
+    ranked_result = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return ranked_result
+
 def generate_report():
     with open(INDEX_FILE, 'r') as f:
         inverted_index = json.load(f)
@@ -79,16 +106,21 @@ def search():
         inverted_index = json.load(f)
 
     url_map = build_url_map()
+    idf = compute_idf(inverted_index, len(url_map))
 
     # version that uses console input for queries rather than a set list
     while True:
-        query = input("Enter a search query or type 'q' to quit: ").strip().lower()
+        query = input("\nEnter a search query or type 'q' to quit: ").strip().lower()
         if (query == "q" or query == "quit"):
             break
-        result = boolean_and_search(process_query(query), inverted_index)
+
+        query_terms = process_query(query)
+        result = boolean_and_search(query_terms, inverted_index)
+        ranked_result = rank_by_tfidf(result, query_terms, inverted_index, idf)
+
         print(f"\nQuery: {query}")
         print(f"Top 5 URLs:")
-        for doc_id in result[:5]:
+        for doc_id, score in ranked_result[:5]:
             print(url_map[doc_id])
 
 if __name__ == "__main__":
