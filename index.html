@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- here is where the main design component is -->
+<div id="app">
+  <!-- title -->
+  <div class="logo-area">
+    <div class="logo-title">CS 121 Search Engine</div>
+  </div>
+
+  <!-- search bar -->
+  <div class="search-wrapper">
+    <input
+      class="search-box"
+      id="query"
+      type="text"
+      placeholder="enter your query here"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <button class="search-btn" id="searchBtn" aria-label="Search">
+      <i class="ti ti-search" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  
+
+  <!-- error message if fail to connect to backend -->
+  <div id="errorBox" class="error-msg" style="display:none;"></div>
+  <div class="results-container" id="results"></div>
+</div>
+
+<script>
+  const API_ENDPOINT = "http://127.0.0.1:5000/search";
+
+  const input     = document.getElementById("query");
+  const btn       = document.getElementById("searchBtn");
+  const resultsEl = document.getElementById("results");
+  const errorBox  = document.getElementById("errorBox");
+
+  function extractDomain(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); }
+    catch { return url.split('/')[2] || url; }
+  }
+  
+  function showLoading() {
+    // spinner when loading results
+    resultsEl.innerHTML =
+      '<div class="state-msg"><div class="spinner"></div><br>Searching for results&hellip;</div>';
+  }
+
+  function showError(msg) {
+    // shows error message on call
+    errorBox.textContent = msg;
+    errorBox.style.display = "block";
+  }
+
+  function clearError() {
+    // clears error message on call
+    errorBox.style.display = "none";
+    errorBox.textContent = "";
+  }
+
+  function renderResults(urls, query) {
+    // shows results given the query and the urls found
+
+    // what shows if no results are found
+    if (!urls || urls.length === 0) {
+      resultsEl.innerHTML =
+        `<div class="state-msg">
+          <i class="ti ti-mood-empty state-icon" aria-hidden="true"></i>
+          Your search - <strong>${query}</strong> - did not match any documents.
+        </div>`;
+      return;
+    }
+
+    // shows how many results were displayed
+    const header = `<div class="results-header">Top ${urls.length} result${urls.length !== 1 ? 's' : ''}</div>`;
+
+    // shows the results in order
+    const cards = urls.map((url, i) => `
+      <div class="result-card" style="animation-delay:${i * 45}ms">
+        <span class="result-rank">${i + 1}</span>
+        <div class="result-content">
+          <a class="result-url" href="${url}" target="_blank" rel="noopener">${url}</a>
+        </div>
+      </div>
+    `).join('');
+    // <div class="result-domain">${extractDomain(url)}</div>
+
+    resultsEl.innerHTML = header + cards;
+  }
+
+  async function doSearch() {
+    // main function that connects to the server and displays the results
+    const query = input.value.trim();
+    if (!query) return;
+
+    clearError();
+    showLoading();
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(`${API_ENDPOINT}?q=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      renderResults(data.urls, query);
+    } catch (err) {
+      resultsEl.innerHTML =
+        `<div class="state-msg">
+          <i class="ti ti-alert-circle state-icon" aria-hidden="true"></i>
+          Could not connect with the backend
+        </div>`;
+      showError(
+        `Error: ${err.message} — is your Flask server running?`
+      );
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener("click", doSearch);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+</script>
+
+</body>
+</html>
