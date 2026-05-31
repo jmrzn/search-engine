@@ -8,12 +8,20 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from bs4 import BeautifulSoup
 from collections import defaultdict
+from simhash import Simhash
 
 index = defaultdict(list)
 unique_tokens = set()
 REPORT = "report.txt"
+SIMHASH_THRESHOLD = 3
 
 stemmer = PorterStemmer()
+
+def is_near_duplicate(fp, seen_fingerprints, threshold=SIMHASH_THRESHOLD):
+    for seen in seen_fingerprints:
+        if fp.distance(seen) <= threshold:
+            return True
+    return False
 
 def tokenize_text(text):
     result = []
@@ -34,6 +42,8 @@ def parse_content(content):
 
 def process_directory(root_path):
     doc_id_counter = 0
+    duplicates_skipped = 0
+    seen_fingerprints: list[Simhash] = []
     # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
@@ -50,6 +60,13 @@ def process_directory(root_path):
                     soup = parse_content(content)
                     clean_text = soup.get_text()
                     tokens = tokenize_text(clean_text)
+
+                    fp = Simhash(tokens)
+                    if is_near_duplicate(fp, seen_fingerprints):
+                        duplicates_skipped += 1
+                        continue          # skip near-duplicate; don't index it
+                    seen_fingerprints.append(fp)
+
                     add_to_index(doc_id_counter, tokens)
                     doc_id_counter += 1
                 except Exception as e:
