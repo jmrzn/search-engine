@@ -14,7 +14,7 @@ REPORT = "report.txt"
 
 stemmer = PorterStemmer()
 
-THRESHOLD = 5000
+THRESHOLD = 500000
 PARTIAL_INDEX_DIR = "partial_indexes"
 FINAL_INDEX_FILE = "inverted_index.json"
 OFFSETS_FILE = "index_offsets.json"
