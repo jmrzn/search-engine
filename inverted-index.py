@@ -12,6 +12,11 @@ from simhash import Simhash
 
 index = defaultdict(list)
 unique_tokens = set()
+doc_lengths = {}
+
+INDEX_FILE = "inverted_index.json"
+DOC_LENGTHS_FILE = "doc_lengths.json"
+DEV_FOLDER = "DEV"
 REPORT = "report.txt"
 SIMHASH_THRESHOLD = 3
 
@@ -61,11 +66,11 @@ def process_directory(root_path):
                     clean_text = soup.get_text()
                     tokens = tokenize_text(clean_text)
 
-                    fp = Simhash(tokens)
-                    if is_near_duplicate(fp, seen_fingerprints):
-                        duplicates_skipped += 1
-                        continue          # skip near-duplicate; don't index it
-                    seen_fingerprints.append(fp)
+                    # fp = Simhash(tokens)
+                    # if is_near_duplicate(fp, seen_fingerprints):
+                    #     duplicates_skipped += 1
+                    #     continue          # skip near-duplicate; don't index it
+                    # seen_fingerprints.append(fp)
 
                     add_to_index(doc_id_counter, tokens)
                     doc_id_counter += 1
@@ -84,14 +89,22 @@ def add_to_index(doc_id, tokens):
     for token, count in term_freqs.items():
         index[token].append({'docID': doc_id, 'term_freqs': count})
 
+    # Store doc length (sum of term frequencies)
+    doc_lengths[doc_id] = sum(term_freqs.values())
+
 def save_index(output_file):
     with open(output_file, 'w') as f:
         json.dump(index, f)
     return os.path.getsize(output_file) / 1024  # Size in KB
 
+def save_doc_lengths(output_file):
+    with open(output_file, 'w') as f:
+        json.dump(doc_lengths, f)
+
 def generate_report():
-    doc_id_counter = process_directory('DEV')
-    size_kb = save_index('inverted_index.json')
+    doc_id_counter = process_directory(DEV_FOLDER)
+    size_kb = save_index(INDEX_FILE)
+    save_doc_lengths(DOC_LENGTHS_FILE)
 
     with open(REPORT, "w") as f:
 
