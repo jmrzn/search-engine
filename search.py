@@ -2,6 +2,7 @@ import os
 import json
 import math
 from nltk import download
+from datetime import datetime
 
 download('punkt_tab')
 
@@ -114,9 +115,15 @@ def search():
         if (query == "q" or query == "quit"):
             break
 
+        start_time = datetime.now()
         query_terms = process_query(query)
         result = boolean_and_search(query_terms, inverted_index)
         ranked_result = rank_by_tfidf(result, query_terms, inverted_index, idf)
+        end_time = datetime.now()
+
+        time_diff = (end_time - start_time).total_seconds() * 1000
+        print("Search engine took", time_diff, "ms")
+
 
         print(f"\nQuery: {query}")
         print(f"Top 5 URLs:")
