@@ -10,14 +10,17 @@ from bs4 import BeautifulSoup
 from collections import defaultdict
 
 index = defaultdict(list)
+unique_tokens = set()
+doc_lengths = {}
 REPORT = "report.txt"
-
+DEV_FOLDER = "DEV"
 stemmer = PorterStemmer()
 
 THRESHOLD = 500000
 PARTIAL_INDEX_DIR = "partial_indexes"
 FINAL_INDEX_FILE = "inverted_index.json"
 OFFSETS_FILE = "index_offsets.json"
+DOC_LENGTHS_FILE = "doc_lengths.json"
 
 def flush_partial_index(local_index, partial_index_num):
     os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
@@ -154,14 +157,22 @@ def add_to_index(doc_id, tokens, local_index):
     # A posting for docID and the term frequency
     for token, count in term_freqs.items():
         local_index[token].append({'docID': doc_id, 'term_freqs': count})
+    
+    # Store doc length (sum of term frequencies)
+    doc_lengths[doc_id] = sum(term_freqs.values())
 
 def save_index(output_file):
     with open(output_file, 'w') as f:
         json.dump(index, f)
     return os.path.getsize(output_file) / 1024
 
+def save_doc_lengths(output_file):
+    with open(output_file, 'w') as f:
+        json.dump(doc_lengths, f)
+
 def generate_report():
-    doc_id_counter, partial_files = process_directory('DEV')
+    doc_id_counter, partial_files = process_directory(DEV_FOLDER)
+    save_doc_lengths(DOC_LENGTHS_FILE)
 
     # merge partial indexes
     if partial_files:
