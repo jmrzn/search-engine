@@ -12,11 +12,6 @@ from simhash import Simhash
 
 index = defaultdict(list)
 unique_tokens = set()
-doc_lengths = {}
-
-INDEX_FILE = "inverted_index.json"
-DOC_LENGTHS_FILE = "doc_lengths.json"
-DEV_FOLDER = "DEV"
 REPORT = "report.txt"
 SIMHASH_THRESHOLD = 3
 
@@ -45,38 +40,51 @@ def parse_content(content):
         return BeautifulSoup(content, features="xml")
     return BeautifulSoup(content, "html.parser")
 
+def get_features(tokens):
+    return [' '.join(tokens[i:i+2]) for i in range(len(tokens) - 1)]
+
 def process_directory(root_path):
     doc_id_counter = 0
     duplicates_skipped = 0
-    seen_fingerprints: list[Simhash] = []
-    # Iterate through domains in directory/root_path
+    seen_fingerprints = []
+    doc_id_to_url = {}
+
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
-        if not os.path.isdir(folder_path):  # add this
+        if not os.path.isdir(folder_path):
             continue
-        
-        # Iterate through each page/file in domain
+
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             with open(file_path, 'r', encoding='utf-8') as f:
                 try:
                     data = json.load(f)
                     content = data.get("content", "")
+                    url = data.get("url", "")
                     soup = parse_content(content)
                     clean_text = soup.get_text()
                     tokens = tokenize_text(clean_text)
 
-                    # fp = Simhash(tokens)
-                    # if is_near_duplicate(fp, seen_fingerprints):
-                    #     duplicates_skipped += 1
-                    #     continue          # skip near-duplicate; don't index it
-                    # seen_fingerprints.append(fp)
+                    if len(tokens) < 50:
+                        duplicates_skipped += 1
+                        continue
 
+                    fp = Simhash(get_features(tokens))
+                    if is_near_duplicate(fp, seen_fingerprints):
+                        duplicates_skipped += 1
+                        print(f"Skipped: {url}")
+                        continue
+                    seen_fingerprints.append(fp)
+
+                    doc_id_to_url[doc_id_counter] = url
                     add_to_index(doc_id_counter, tokens)
+                    print(f"Adding doc {doc_id_counter} to index")
                     doc_id_counter += 1
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
-    return doc_id_counter
+
+    print(f"Duplicates skipped: {duplicates_skipped}")
+    return doc_id_counter, doc_id_to_url
 
 def add_to_index(doc_id, tokens):
     # Calculate term frequency
@@ -89,22 +97,19 @@ def add_to_index(doc_id, tokens):
     for token, count in term_freqs.items():
         index[token].append({'docID': doc_id, 'term_freqs': count})
 
-    # Store doc length (sum of term frequencies)
-    doc_lengths[doc_id] = sum(term_freqs.values())
-
 def save_index(output_file):
     with open(output_file, 'w') as f:
         json.dump(index, f)
     return os.path.getsize(output_file) / 1024  # Size in KB
 
-def save_doc_lengths(output_file):
+def save_url_map(doc_id_to_url, output_file="url_map.json"):
     with open(output_file, 'w') as f:
-        json.dump(doc_lengths, f)
+        json.dump(doc_id_to_url, f)
 
 def generate_report():
-    doc_id_counter = process_directory(DEV_FOLDER)
-    size_kb = save_index(INDEX_FILE)
-    save_doc_lengths(DOC_LENGTHS_FILE)
+    doc_id_counter, doc_id_to_url = process_directory('ANALYST')
+    size_kb = save_index('inverted_index.json')
+    save_url_map(doc_id_to_url)
 
     with open(REPORT, "w") as f:
 
