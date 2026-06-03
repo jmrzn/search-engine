@@ -161,9 +161,8 @@ def save_index(output_file):
     return os.path.getsize(output_file) / 1024
 
 def generate_report():
-    doc_id_counter = process_directory('DEV')
-    partial_files = process_directory('DEV')
-        
+    doc_id_counter, partial_files = process_directory('DEV')
+
     # merge partial indexes
     if partial_files:
         size_kb = merge_partial_indexes(partial_files, FINAL_INDEX_FILE, OFFSETS_FILE)
