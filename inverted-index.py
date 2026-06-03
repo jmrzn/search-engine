@@ -100,6 +100,40 @@ def parse_content(content):
         return BeautifulSoup(content, features="xml")
     return BeautifulSoup(content, "html.parser")
 
+def extract_tag_counts(soup):
+    title_counts = defaultdict(int)
+    h1_counts = defaultdict(int)
+    h2_counts = defaultdict(int)
+    h3_counts = defaultdict(int)
+    bold_counts = defaultdict(int)
+
+    # Extract tokens from the title and count their frequency
+    if soup.title:
+        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+            title_counts[token] += 1
+
+    # Extract tokens from all H1 headers and count their frequency
+    for tag in soup.find_all("h1"):
+        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+            h1_counts[token] += 1
+
+    # Extract tokens from all H2 headers and count their frequency
+    for tag in soup.find_all("h2"):
+        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+            h2_counts[token] += 1
+
+    # Extract tokens from all H3 headers and count their frequency
+    for tag in soup.find_all("h3"):
+        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+            h3_counts[token] += 1
+
+    # Extract tokens from all bold words and count their frequency
+    for tag in soup.find_all(["b", "strong"]):
+        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+            bold_counts[token] += 1
+
+    return title_counts, h1_counts, h2_counts, h3_counts, bold_counts
+
 def process_directory(root_path):
     doc_id_counter = 0
     
@@ -124,11 +158,16 @@ def process_directory(root_path):
                     content = data.get("content", "")
                     soup = parse_content(content)
                     clean_text = soup.get_text()
-                    tokens = tokenize_text(clean_text)
-                    add_to_index(doc_id_counter, tokens, local_index)
-                    local_size += len(tokens)
+
+                    body_tokens = tokenize_text(clean_text)
+                    title_counts, h1_counts, h2_counts, h3_counts, bold_counts = extract_tag_counts(soup)
+
+                    add_to_index(doc_id_counter, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index)
+                    # print(f"Added doc {doc_id_counter} to index")
+
+                    local_size += len(body_tokens)
                     doc_id_counter += 1
-                    
+
                     # flushes partial index when reach threshold
                     if local_size >= THRESHOLD:
                         path = flush_partial_index(local_index, partial_index_num)
@@ -148,16 +187,27 @@ def process_directory(root_path):
     
     return doc_id_counter, partial_files
 
-def add_to_index(doc_id, tokens, local_index):
-    # Calculate term frequency
+def add_to_index(doc_id, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index):
+    # Calculate body term frequency
     term_freqs = defaultdict(int)
-    for token in tokens:
+    for token in body_tokens:
         term_freqs[token] += 1
 
-    # A posting for docID and the term frequency
-    for token, count in term_freqs.items():
-        local_index[token].append({'docID': doc_id, 'term_freqs': count})
-    
+    # Create a set of all unique terms that appear anywhere in the doc
+    all_terms = set(term_freqs).union(title_counts, h1_counts, h2_counts, h3_counts, bold_counts)
+
+    # A posting for docID, term frequency, and title/headers/bold term frequency
+    for term in all_terms:
+        local_index[term].append({
+            'docID': doc_id,
+            'term_freqs': term_freqs.get(term, 0),
+            'title_count': title_counts.get(term, 0),
+            'h1_count': h1_counts.get(term, 0),
+            'h2_count': h2_counts.get(term, 0),
+            'h3_count': h3_counts.get(term, 0),
+            'bold_count': bold_counts.get(term, 0)
+        })
+
     # Store doc length (sum of term frequencies)
     doc_lengths[doc_id] = sum(term_freqs.values())
 

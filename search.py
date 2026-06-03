@@ -85,10 +85,23 @@ def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
             if docID not in search_result_set:
                 continue
 
+            # Calculate TF-IDF score
             tf = 1 + math.log(posting["term_freqs"])
             tfidf = tf * idf.get(term, 0)
-            scores[docID] = scores.get(docID, 0) + tfidf
 
+            # Calculate boost for term being in the title/headers/bold
+            boost = (
+                4 * math.log(1 + posting.get("title_count", 0)) +
+                3 * math.log(1 + posting.get("h1_count", 0)) +
+                2 * math.log(1 + posting.get("h2_count", 0)) +
+                1 * math.log(1 + posting.get("bold_count", 0))
+            )
+
+            # Final score
+            score = tfidf * (1 + boost)
+            scores[docID] = scores.get(docID, 0) + score
+
+    # Length normalization - divide score by doc length
     for docID in scores:
         scores[docID] /= doc_lengths.get(docID, 1)
 
