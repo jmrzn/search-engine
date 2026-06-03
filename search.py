@@ -70,17 +70,15 @@ def compute_idf(index, num_docs):
         idfs[term] = idf
     return idfs
 
-def rank_by_tfidf(search_result, query_terms, index, idf):
+def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
     scores = {}
     search_result_set = set(search_result)
 
-    with open(DOC_LENGTHS_FILE, 'r') as f:
-        doc_lengths = json.load(f)
-    doc_lengths = {int(docID): length for docID, length in doc_lengths.items()}
-
+    # print("len(search_result):", len(search_result))
     for term in query_terms:
         if term not in index:
             continue
+        # print(term, len(index[term]))
 
         for posting in index[term]:
             docID = posting['docID']
@@ -119,6 +117,10 @@ def generate_report():
     with open(OFFSETS_FILE, 'r') as f:
         offsets = json.load(f)
 
+    with open(DOC_LENGTHS_FILE, 'r') as d:
+        doc_lengths = json.load(d)
+    doc_lengths = {int(docID): length for docID, length in doc_lengths.items()}
+
     url_map = build_url_map()
     queries = ["cristina lopes", "machine learning", "ACM", "master of software engineering"]
 
@@ -130,7 +132,7 @@ def generate_report():
             idf = compute_idf(query_index, len(url_map))
 
             result = boolean_and_search(query_terms, query_index)
-            ranked_result = rank_by_tfidf(result, query_terms, query_index, idf)
+            ranked_result = rank_by_tfidf(result, query_terms, query_index, idf, doc_lengths)
             end_time = datetime.now()
 
             time_diff = (end_time - start_time).total_seconds() * 1000
@@ -144,6 +146,10 @@ def generate_report():
 def search():
     with open(OFFSETS_FILE, 'r') as f:
         offsets = json.load(f)
+
+    with open(DOC_LENGTHS_FILE, 'r') as d:
+        doc_lengths = json.load(d)
+    doc_lengths = {int(docID): length for docID, length in doc_lengths.items()}
 
     url_map = build_url_map()
 
@@ -166,7 +172,7 @@ def search():
         result = boolean_and_search(query_terms, query_index)
         # t4 = datetime.now()
 
-        ranked_result = rank_by_tfidf(result, query_terms, query_index, idf)
+        ranked_result = rank_by_tfidf(result, query_terms, query_index, idf, doc_lengths)
         # t5 = datetime.now()
         end_time = datetime.now()
 
