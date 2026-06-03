@@ -72,20 +72,28 @@ def compute_idf(index, num_docs):
 
 def rank_by_tfidf(search_result, query_terms, index, idf):
     scores = {}
-    
+    search_result_set = set(search_result)
+
+    with open(DOC_LENGTHS_FILE, 'r') as f:
+        doc_lengths = json.load(f)
+    doc_lengths = {int(docID): length for docID, length in doc_lengths.items()}
+
     for term in query_terms:
         if term not in index:
             continue
 
         for posting in index[term]:
             docID = posting['docID']
-            if docID not in search_result:
+            if docID not in search_result_set:
                 continue
 
             tf = 1 + math.log(posting["term_freqs"])
             tfidf = tf * idf.get(term, 0)
             scores[docID] = scores.get(docID, 0) + tfidf
-    
+
+    for docID in scores:
+        scores[docID] /= doc_lengths.get(docID, 1)
+
     ranked_result = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return ranked_result
 
@@ -147,15 +155,29 @@ def search():
 
         start_time = datetime.now()
         query_terms = process_query(query)
+        # t1 = datetime.now()
+
         query_index = create_query_index(query_terms, offsets)
+        # t2 = datetime.now()
+
         idf = compute_idf(query_index, len(url_map))
+        # t3 = datetime.now()
 
         result = boolean_and_search(query_terms, query_index)
+        # t4 = datetime.now()
+
         ranked_result = rank_by_tfidf(result, query_terms, query_index, idf)
+        # t5 = datetime.now()
         end_time = datetime.now()
 
         time_diff = (end_time - start_time).total_seconds() * 1000
         print("Search engine took", time_diff, "ms")
+        # print(f"process_query: {(t1 - start_time).total_seconds() * 1000:.2f} ms")
+        # print(f"create_query_index: {(t2 - t1).total_seconds() * 1000:.2f} ms")
+        # print(f"compute_idf: {(t3 - t2).total_seconds() * 1000:.2f} ms")
+        # print(f"boolean_and_search: {(t4 - t3).total_seconds() * 1000:.2f} ms")
+        # print(f"rank_by_tfidf: {(t5 - t4).total_seconds() * 1000:.2f} ms")
+        # print(f"TOTAL: {(t5 - start_time).total_seconds() * 1000:.2f} ms")
 
         print(f"\nQuery: {query}")
         print(f"Top 5 URLs:")
