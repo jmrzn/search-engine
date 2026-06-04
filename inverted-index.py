@@ -11,17 +11,76 @@ from collections import defaultdict
 from simhash import Simhash
 
 index = defaultdict(list)
-unique_tokens = set()
 REPORT = "report.txt"
 SIMHASH_THRESHOLD = 3
 
 stemmer = PorterStemmer()
 
-def is_near_duplicate(fp, seen_fingerprints, threshold=SIMHASH_THRESHOLD):
-    for seen in seen_fingerprints:
-        if fp.distance(seen) <= threshold:
-            return True
-    return False
+THRESHOLD = 5000
+PARTIAL_INDEX_DIR = "partial_indexes"
+FINAL_INDEX_FILE = "inverted_index.json"
+OFFSETS_FILE = "index_offsets.json"
+
+def flush_partial_index(local_index, partial_index_num):
+    os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
+    path = os.path.join(PARTIAL_INDEX_DIR, f"partial_{partial_index_num}.json")
+    # sort terms before writing so merging is easier later
+    sorted_index = {k: local_index[k] for k in sorted(local_index)}
+    with open(path, 'w') as f:
+        json.dump(sorted_index, f)
+    print(f"  Flushed partial index #{partial_index_num} ({len(sorted_index)} terms) -> {path}")
+    return path
+
+def merge_partial_indexes(partial_files, output_file, offsets_file):
+    # load each partial file into memory to get iterators in sorted order
+    iterators = []
+    for path in partial_files:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        iterators.append(iter(sorted(data.items())))
+ 
+    # get the first entry from each partial index for merging
+    firsts = [] 
+    for i, it in enumerate(iterators):
+        try:
+            firsts.append([next(it), i, it])
+        except StopIteration:
+            pass
+ 
+    offsets = {}
+ 
+    with open(output_file, 'w') as out:
+        while firsts:
+            # find the smallest term (lexicographically)
+            min_term = min(f[0][0] for f in firsts)
+ 
+            # get postings from all iterators that have the same min_term
+            merged_postings = []
+            new_firsts = []
+            for entry in firsts:
+                (term, postings), idx, it = entry
+                if term == min_term:
+                    merged_postings.extend(postings)
+                    try:
+                        new_firsts.append([next(it), idx, it])
+                    except StopIteration:
+                        pass
+                else:
+                    new_firsts.append(entry)
+            firsts = new_firsts
+ 
+            # record byte offset + write this term's line to the index json file
+            offsets[min_term] = out.tell()
+            out.write(json.dumps({min_term: merged_postings}) + "\n")
+    
+    # save the offsets for later when searching
+    with open(offsets_file, 'w') as f:
+        json.dump(offsets, f)
+ 
+    size_kb = os.path.getsize(output_file) / 1024
+    print(f"Final index written to {output_file} ({size_kb:.2f} KB)")
+    print(f"Offsets written to {offsets_file} ({len(offsets)} terms)")
+    return size_kb
 
 def tokenize_text(text):
     result = []
@@ -45,10 +104,14 @@ def get_features(tokens):
 
 def process_directory(root_path):
     doc_id_counter = 0
-    duplicates_skipped = 0
-    seen_fingerprints = []
-    doc_id_to_url = {}
-
+    
+    # variables for partial indexing
+    partial_index_num = 0
+    local_index = defaultdict(list)
+    partial_files = []
+    local_size = 0
+ 
+    # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
         if not os.path.isdir(folder_path):
@@ -64,57 +127,67 @@ def process_directory(root_path):
                     soup = parse_content(content)
                     clean_text = soup.get_text()
                     tokens = tokenize_text(clean_text)
-
-                    if len(tokens) < 50:
-                        duplicates_skipped += 1
-                        continue
-
-                    fp = Simhash(get_features(tokens))
-                    if is_near_duplicate(fp, seen_fingerprints):
-                        duplicates_skipped += 1
-                        print(f"Skipped: {url}")
-                        continue
-                    seen_fingerprints.append(fp)
-
-                    doc_id_to_url[doc_id_counter] = url
-                    add_to_index(doc_id_counter, tokens)
-                    print(f"Adding doc {doc_id_counter} to index")
+                    add_to_index(doc_id_counter, tokens, local_index)
+                    local_size += len(tokens)
                     doc_id_counter += 1
+                    
+                    # flushes partial index when reach threshold
+                    if local_size >= THRESHOLD:
+                        path = flush_partial_index(local_index, partial_index_num)
+                        partial_files.append(path)
+                        partial_index_num += 1
+                        local_index = defaultdict(list)
+                        local_size = 0
+                        
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
+    
+    # flushes anything left in the local_index
+    if local_index:
+        path = flush_partial_index(local_index, partial_index_num)
+        partial_files.append(path)
+        partial_index_num += 1
+    
+    return doc_id_counter, partial_files
 
-    print(f"Duplicates skipped: {duplicates_skipped}")
-    return doc_id_counter, doc_id_to_url
-
-def add_to_index(doc_id, tokens):
+def add_to_index(doc_id, tokens, local_index):
     # Calculate term frequency
     term_freqs = defaultdict(int)
     for token in tokens:
         term_freqs[token] += 1
-        unique_tokens.add(token)
 
     # A posting for docID and the term frequency
     for token, count in term_freqs.items():
-        index[token].append({'docID': doc_id, 'term_freqs': count})
+        local_index[token].append({'docID': doc_id, 'term_freqs': count})
 
 def save_index(output_file):
     with open(output_file, 'w') as f:
         json.dump(index, f)
-    return os.path.getsize(output_file) / 1024  # Size in KB
+    return os.path.getsize(output_file) / 1024
 
 def save_url_map(doc_id_to_url, output_file="url_map.json"):
     with open(output_file, 'w') as f:
         json.dump(doc_id_to_url, f)
 
 def generate_report():
-    doc_id_counter, doc_id_to_url = process_directory('ANALYST')
-    size_kb = save_index('inverted_index.json')
-    save_url_map(doc_id_to_url)
+    doc_id_counter = process_directory('DEV')
+    partial_files = process_directory('DEV')
+        
+    # merge partial indexes
+    if partial_files:
+        size_kb = merge_partial_indexes(partial_files, FINAL_INDEX_FILE, OFFSETS_FILE)
+    else:
+        return
+
+    # count unique tokens
+    unique_token_count = 0
+    with open(OFFSETS_FILE, 'r') as f:
+        offsets = json.load(f)
+        unique_token_count = len(offsets)
 
     with open(REPORT, "w") as f:
-
         print(f"Documents Indexed: {doc_id_counter}", file=f)
-        print(f"Unique Tokens: {len(unique_tokens)}", file=f)
+        print(f"Unique Tokens: {unique_token_count}", file=f)
         print(f"Index Size: {size_kb:.2f} KB", file=f)
 
 if __name__ == "__main__":
