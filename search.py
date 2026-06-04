@@ -86,7 +86,7 @@ def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
                 continue
 
             # Calculate TF-IDF score
-            tf = 1 + math.log(posting["term_freqs"])
+            tf = 1 + math.log(posting["term_freqs"]) if posting["term_freqs"] > 0 else 0
             tfidf = tf * idf.get(term, 0)
 
             # Calculate boost for term being in the title/headers/bold
