@@ -8,6 +8,7 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from bs4 import BeautifulSoup
 from collections import defaultdict
+from simhash import Simhash
 
 index = defaultdict(list)
 unique_tokens = set()
@@ -100,6 +101,21 @@ def parse_content(content):
         return BeautifulSoup(content, features="xml")
     return BeautifulSoup(content, "html.parser")
 
+def get_main_content(soup):
+    # Remove boilerplate tags entirely
+    for tag in soup.find_all(['nav', 'header', 'footer', 'script', 'style', 'meta', 'link']):
+        tag.decompose()
+
+    # Prefer paragraph/article/section text for hashing — avoids shared nav
+    # text that survives tag removal (e.g. site titles, breadcrumbs) polluting
+    # the SimHash and causing false-positive duplicate matches.
+    content_tags = soup.find_all(['p', 'article', 'section', 'main', 'h1', 'h2', 'h3'])
+    if content_tags:
+        return ' '.join(t.get_text(separator=' ', strip=True) for t in content_tags)
+
+    # Fall back to full page text if no content tags found
+    return soup.get_text(separator=' ', strip=True)
+
 def extract_tag_counts(soup):
     title_counts = defaultdict(int)
     h1_counts = defaultdict(int)
@@ -134,41 +150,80 @@ def extract_tag_counts(soup):
 
     return title_counts, h1_counts, h2_counts, h3_counts, bold_counts
 
+DOC_URL_MAP_FILE = "doc_url_map.json"
+
 def process_directory(root_path):
     doc_id_counter = 0
-    
-    # variables for partial indexing
+    doc_url_map = {}
     partial_index_num = 0
     local_index = defaultdict(list)
     partial_files = []
     local_size = 0
+
+    seen_hashes = []
+    SIMHASH_THRESHOLD = 1
+    skipped = 0
+    total = 0
+    skip_log = open("simhash_skipped.txt", "w")
  
-    # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
-        if not os.path.isdir(folder_path):  # add this
+        if not os.path.isdir(folder_path):
             continue
         
-        # Iterate through each page/file in domain
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             with open(file_path, 'r', encoding='utf-8') as f:
                 try:
                     data = json.load(f)
                     content = data.get("content", "")
+                    url = data.get("url", file_path)
                     soup = parse_content(content)
                     clean_text = soup.get_text()
+                    total += 1
+
+                    try:
+                        main_content = get_main_content(soup)
+                        sh = Simhash(main_content)
+                        matched_original = None
+                        matched_distance = None
+                        matched_content = None
+                        for seen_sh, seen_url, seen_content in seen_hashes:
+                            d = sh.distance(seen_sh)
+                            if d <= SIMHASH_THRESHOLD:
+                                matched_original = seen_url
+                                matched_distance = d
+                                matched_content = seen_content
+                                break
+
+                        if matched_original is not None:
+                            skipped += 1
+                            print(f"Skipped duplicate ({skipped} skipped / {total} total) [distance={matched_distance}]", file=skip_log)
+                            print(f"  SKIP    ({len(main_content):>6} chars): {url}", file=skip_log)
+                            print(f"  MATCHED ({len(matched_content):>6} chars): {matched_original}", file=skip_log)
+                            skip_preview    = main_content[:300].replace('\n', ' ')
+                            matched_preview = matched_content[:300].replace('\n', ' ')
+                            print(f"  --- skipped content ---", file=skip_log)
+                            print(f"  {skip_preview}", file=skip_log)
+                            print(f"  --- matched original content ---", file=skip_log)
+                            print(f"  {matched_preview}", file=skip_log)
+                            print(file=skip_log)
+                            continue
+
+                        seen_hashes.append((sh, url, main_content))
+                    except (ValueError, OverflowError):
+                        pass
 
                     body_tokens = tokenize_text(clean_text)
                     title_counts, h1_counts, h2_counts, h3_counts, bold_counts = extract_tag_counts(soup)
 
+                    doc_url_map[doc_id_counter] = url
                     add_to_index(doc_id_counter, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index)
-                    # print(f"Added doc {doc_id_counter} to index")
+                    print(f"Added doc {doc_id_counter} to index")
+                    doc_id_counter += 1  # ← only increment once, right here
 
                     local_size += len(body_tokens)
-                    doc_id_counter += 1
 
-                    # flushes partial index when reach threshold
                     if local_size >= THRESHOLD:
                         path = flush_partial_index(local_index, partial_index_num)
                         partial_files.append(path)
@@ -178,13 +233,18 @@ def process_directory(root_path):
                         
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
+
+    skip_log.close()
     
-    # flushes anything left in the local_index
     if local_index:
         path = flush_partial_index(local_index, partial_index_num)
         partial_files.append(path)
         partial_index_num += 1
+
+    with open(DOC_URL_MAP_FILE, 'w') as f:
+        json.dump(doc_url_map, f)
     
+    print(f"\nSimHash deduplication: {skipped} pages skipped out of {total} total ({total - skipped} indexed)")
     return doc_id_counter, partial_files
 
 def add_to_index(doc_id, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index):
