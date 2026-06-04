@@ -114,22 +114,22 @@ def extract_tag_counts(soup):
 
     # Extract tokens from all H1 headers and count their frequency
     for tag in soup.find_all("h1"):
-        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
             h1_counts[token] += 1
 
     # Extract tokens from all H2 headers and count their frequency
     for tag in soup.find_all("h2"):
-        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
             h2_counts[token] += 1
 
     # Extract tokens from all H3 headers and count their frequency
     for tag in soup.find_all("h3"):
-        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
             h3_counts[token] += 1
 
     # Extract tokens from all bold words and count their frequency
     for tag in soup.find_all(["b", "strong"]):
-        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
             bold_counts[token] += 1
 
     return title_counts, h1_counts, h2_counts, h3_counts, bold_counts

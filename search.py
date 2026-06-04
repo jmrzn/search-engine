@@ -91,9 +91,10 @@ def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
 
             # Calculate boost for term being in the title/headers/bold
             boost = (
-                4 * math.log(1 + posting.get("title_count", 0)) +
-                3 * math.log(1 + posting.get("h1_count", 0)) +
-                2 * math.log(1 + posting.get("h2_count", 0)) +
+                5 * math.log(1 + posting.get("title_count", 0)) +
+                4 * math.log(1 + posting.get("h1_count", 0)) +
+                3 * math.log(1 + posting.get("h2_count", 0)) +
+                2 * math.log(1 + posting.get("h3_count", 0)) +
                 1 * math.log(1 + posting.get("bold_count", 0))
             )
 
@@ -101,9 +102,9 @@ def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
             score = tfidf * (1 + boost)
             scores[docID] = scores.get(docID, 0) + score
 
-    # Length normalization - divide score by doc length
+    # Length normalization
     for docID in scores:
-        scores[docID] /= doc_lengths.get(docID, 1)
+        scores[docID] /= math.sqrt(doc_lengths.get(docID, 1))
 
     ranked_result = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return ranked_result
