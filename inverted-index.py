@@ -155,26 +155,22 @@ DOC_URL_MAP_FILE = "doc_url_map.json"
 def process_directory(root_path):
     doc_id_counter = 0
     doc_url_map = {}
-    # variables for partial indexing
     partial_index_num = 0
     local_index = defaultdict(list)
     partial_files = []
     local_size = 0
 
-    # variables for SimHash deduplication
     seen_hashes = []
     SIMHASH_THRESHOLD = 1
     skipped = 0
     total = 0
     skip_log = open("simhash_skipped.txt", "w")
  
-    # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
         if not os.path.isdir(folder_path):
             continue
         
-        # Iterate through each page/file in domain
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -186,7 +182,6 @@ def process_directory(root_path):
                     clean_text = soup.get_text()
                     total += 1
 
-                    # SimHash near-duplicate detection
                     try:
                         main_content = get_main_content(soup)
                         sh = Simhash(main_content)
@@ -224,13 +219,11 @@ def process_directory(root_path):
 
                     doc_url_map[doc_id_counter] = url
                     add_to_index(doc_id_counter, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index)
-                    doc_id_counter += 1
                     print(f"Added doc {doc_id_counter} to index")
+                    doc_id_counter += 1  # ← only increment once, right here
 
                     local_size += len(body_tokens)
-                    doc_id_counter += 1
 
-                    # flushes partial index when reach threshold
                     if local_size >= THRESHOLD:
                         path = flush_partial_index(local_index, partial_index_num)
                         partial_files.append(path)
@@ -243,7 +236,6 @@ def process_directory(root_path):
 
     skip_log.close()
     
-    # flushes anything left in the local_index
     if local_index:
         path = flush_partial_index(local_index, partial_index_num)
         partial_files.append(path)
