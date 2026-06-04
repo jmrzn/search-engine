@@ -8,18 +8,19 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from bs4 import BeautifulSoup
 from collections import defaultdict
-from simhash import Simhash
 
 index = defaultdict(list)
+unique_tokens = set()
+doc_lengths = {}
 REPORT = "report.txt"
-SIMHASH_THRESHOLD = 3
-
+DEV_FOLDER = "DEV"
 stemmer = PorterStemmer()
 
-THRESHOLD = 5000
+THRESHOLD = 500000
 PARTIAL_INDEX_DIR = "partial_indexes"
 FINAL_INDEX_FILE = "inverted_index.json"
 OFFSETS_FILE = "index_offsets.json"
+DOC_LENGTHS_FILE = "doc_lengths.json"
 
 def flush_partial_index(local_index, partial_index_num):
     os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
@@ -99,8 +100,39 @@ def parse_content(content):
         return BeautifulSoup(content, features="xml")
     return BeautifulSoup(content, "html.parser")
 
-def get_features(tokens):
-    return [' '.join(tokens[i:i+2]) for i in range(len(tokens) - 1)]
+def extract_tag_counts(soup):
+    title_counts = defaultdict(int)
+    h1_counts = defaultdict(int)
+    h2_counts = defaultdict(int)
+    h3_counts = defaultdict(int)
+    bold_counts = defaultdict(int)
+
+    # Extract tokens from the title and count their frequency
+    if soup.title:
+        for token in tokenize_text(soup.title.get_text(" ", strip=True)):
+            title_counts[token] += 1
+
+    # Extract tokens from all H1 headers and count their frequency
+    for tag in soup.find_all("h1"):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
+            h1_counts[token] += 1
+
+    # Extract tokens from all H2 headers and count their frequency
+    for tag in soup.find_all("h2"):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
+            h2_counts[token] += 1
+
+    # Extract tokens from all H3 headers and count their frequency
+    for tag in soup.find_all("h3"):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
+            h3_counts[token] += 1
+
+    # Extract tokens from all bold words and count their frequency
+    for tag in soup.find_all(["b", "strong"]):
+        for token in tokenize_text(tag.get_text(" ", strip=True)):
+            bold_counts[token] += 1
+
+    return title_counts, h1_counts, h2_counts, h3_counts, bold_counts
 
 def process_directory(root_path):
     doc_id_counter = 0
@@ -114,23 +146,28 @@ def process_directory(root_path):
     # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
-        if not os.path.isdir(folder_path):
+        if not os.path.isdir(folder_path):  # add this
             continue
-
+        
+        # Iterate through each page/file in domain
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             with open(file_path, 'r', encoding='utf-8') as f:
                 try:
                     data = json.load(f)
                     content = data.get("content", "")
-                    url = data.get("url", "")
                     soup = parse_content(content)
                     clean_text = soup.get_text()
-                    tokens = tokenize_text(clean_text)
-                    add_to_index(doc_id_counter, tokens, local_index)
-                    local_size += len(tokens)
+
+                    body_tokens = tokenize_text(clean_text)
+                    title_counts, h1_counts, h2_counts, h3_counts, bold_counts = extract_tag_counts(soup)
+
+                    add_to_index(doc_id_counter, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index)
+                    # print(f"Added doc {doc_id_counter} to index")
+
+                    local_size += len(body_tokens)
                     doc_id_counter += 1
-                    
+
                     # flushes partial index when reach threshold
                     if local_size >= THRESHOLD:
                         path = flush_partial_index(local_index, partial_index_num)
@@ -150,29 +187,52 @@ def process_directory(root_path):
     
     return doc_id_counter, partial_files
 
-def add_to_index(doc_id, tokens, local_index):
-    # Calculate term frequency
+def add_to_index(doc_id, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index):
+    # Calculate body term frequency
     term_freqs = defaultdict(int)
-    for token in tokens:
+    for token in body_tokens:
         term_freqs[token] += 1
 
-    # A posting for docID and the term frequency
-    for token, count in term_freqs.items():
-        local_index[token].append({'docID': doc_id, 'term_freqs': count})
+    # Create a set of all unique terms that appear anywhere in the doc
+    all_terms = set(term_freqs).union(title_counts, h1_counts, h2_counts, h3_counts, bold_counts)
+
+    # A posting for docID, term frequency, and title/headers/bold term frequency if > 0
+    for term in all_terms:
+        posting = {'docID': doc_id, 'term_freqs': term_freqs.get(term, 0)}
+
+        if title_counts.get(term, 0):
+            posting["title_count"] = title_counts[term]
+
+        if h1_counts.get(term, 0):
+            posting["h1_count"] = h1_counts[term]
+
+        if h2_counts.get(term, 0):
+            posting["h2_count"] = h2_counts[term]
+
+        if h3_counts.get(term, 0):
+            posting["h3_count"] = h3_counts[term]
+
+        if bold_counts.get(term, 0):
+            posting["bold_count"] = bold_counts[term]
+
+        local_index[term].append(posting)
+
+    # Store doc length (sum of term frequencies)
+    doc_lengths[doc_id] = sum(term_freqs.values())
 
 def save_index(output_file):
     with open(output_file, 'w') as f:
         json.dump(index, f)
     return os.path.getsize(output_file) / 1024
 
-def save_url_map(doc_id_to_url, output_file="url_map.json"):
+def save_doc_lengths(output_file):
     with open(output_file, 'w') as f:
-        json.dump(doc_id_to_url, f)
+        json.dump(doc_lengths, f)
 
 def generate_report():
-    doc_id_counter = process_directory('DEV')
-    partial_files = process_directory('DEV')
-        
+    doc_id_counter, partial_files = process_directory(DEV_FOLDER)
+    save_doc_lengths(DOC_LENGTHS_FILE)
+
     # merge partial indexes
     if partial_files:
         size_kb = merge_partial_indexes(partial_files, FINAL_INDEX_FILE, OFFSETS_FILE)
