@@ -8,9 +8,11 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from bs4 import BeautifulSoup
 from collections import defaultdict
+from simhash import Simhash
 
 index = defaultdict(list)
 REPORT = "report.txt"
+SIMHASH_THRESHOLD = 3
 
 stemmer = PorterStemmer()
 
@@ -97,6 +99,9 @@ def parse_content(content):
         return BeautifulSoup(content, features="xml")
     return BeautifulSoup(content, "html.parser")
 
+def get_features(tokens):
+    return [' '.join(tokens[i:i+2]) for i in range(len(tokens) - 1)]
+
 def process_directory(root_path):
     doc_id_counter = 0
     
@@ -109,16 +114,16 @@ def process_directory(root_path):
     # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
-        if not os.path.isdir(folder_path):  # add this
+        if not os.path.isdir(folder_path):
             continue
-        
-        # Iterate through each page/file in domain
+
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             with open(file_path, 'r', encoding='utf-8') as f:
                 try:
                     data = json.load(f)
                     content = data.get("content", "")
+                    url = data.get("url", "")
                     soup = parse_content(content)
                     clean_text = soup.get_text()
                     tokens = tokenize_text(clean_text)
@@ -159,6 +164,10 @@ def save_index(output_file):
     with open(output_file, 'w') as f:
         json.dump(index, f)
     return os.path.getsize(output_file) / 1024
+
+def save_url_map(doc_id_to_url, output_file="url_map.json"):
+    with open(output_file, 'w') as f:
+        json.dump(doc_id_to_url, f)
 
 def generate_report():
     doc_id_counter = process_directory('DEV')

@@ -2,6 +2,7 @@ import os
 import json
 import math
 from nltk import download
+from datetime import datetime
 
 download('punkt_tab')
 
@@ -11,8 +12,9 @@ from nltk.stem import PorterStemmer
 stemmer = PorterStemmer()
 
 INDEX_FILE = "inverted_index.json"
+DOC_LENGTHS_FILE = "doc_lengths.json"
 DEV_FOLDER = "DEV"
-REPORT = "m2_report.txt"
+REPORT = "m3_report.txt"
 
 def build_url_map(root_path=DEV_FOLDER):
     doc_id_to_url = {}
@@ -69,7 +71,10 @@ def compute_idf(index, num_docs):
 
 def rank_by_tfidf(search_result, query_terms, index, idf):
     scores = {}
-    
+    with open(DOC_LENGTHS_FILE, 'r') as f:
+        doc_lengths = json.load(f)
+    doc_lengths = {int(docID): length for docID, length in doc_lengths.items()}
+
     for term in query_terms:
         if term not in index:
             continue
@@ -82,7 +87,10 @@ def rank_by_tfidf(search_result, query_terms, index, idf):
             tf = 1 + math.log(posting["term_freqs"])
             tfidf = tf * idf.get(term, 0)
             scores[docID] = scores.get(docID, 0) + tfidf
-    
+
+    for docID in scores:
+        scores[docID] /= doc_lengths.get(docID, 1)
+
     ranked_result = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return ranked_result
 
@@ -91,12 +99,21 @@ def generate_report():
         inverted_index = json.load(f)
 
     url_map = build_url_map()
+    idf = compute_idf(inverted_index, len(url_map))
     queries = ["cristina lopes", "machine learning", "ACM", "master of software engineering"]
 
     with open(REPORT, "w") as r:
         for query in queries:
-            result = boolean_and_search(process_query(query), inverted_index)
-            print(f"\nQuery: {query}", file=r)
+            start_time = datetime.now()
+            query_terms = process_query(query)
+            result = boolean_and_search(query_terms, inverted_index)
+            ranked_result = rank_by_tfidf(result, query_terms, inverted_index, idf)
+            end_time = datetime.now()
+
+            time_diff = (end_time - start_time).total_seconds() * 1000
+            print("\nSearch engine took", time_diff, "ms", file=r)
+
+            print(f"Query: {query}", file=r)
             print(f"Top 5 URLs:", file=r)
             for doc_id in result[:5]:
                 print(url_map[doc_id], file=r)
@@ -114,9 +131,15 @@ def search():
         if (query == "q" or query == "quit"):
             break
 
+        start_time = datetime.now()
         query_terms = process_query(query)
         result = boolean_and_search(query_terms, inverted_index)
         ranked_result = rank_by_tfidf(result, query_terms, inverted_index, idf)
+        end_time = datetime.now()
+
+        time_diff = (end_time - start_time).total_seconds() * 1000
+        print("Search engine took", time_diff, "ms")
+
 
         print(f"\nQuery: {query}")
         print(f"Top 5 URLs:")
