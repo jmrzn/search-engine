@@ -17,27 +17,12 @@ DOC_LENGTHS_FILE = "doc_lengths.json"
 DEV_FOLDER = "DEV"
 REPORT = "m3_report.txt"
 
-def build_url_map(root_path=DEV_FOLDER):
-    doc_id_to_url = {}
-    doc_id_counter = 0
- 
-    for domain in os.listdir(root_path):
-        folder_path = os.path.join(root_path, domain)
-        if not os.path.isdir(folder_path):
-            continue
+DOC_URL_MAP_FILE = "doc_url_map.json"
 
-        # Iterate through each page/file in domain
-        for file_name in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, file_name)
-            with open(file_path, 'r', encoding='utf-8') as f:
-                try:
-                    data = json.load(f)
-                    url = data.get("url", "")   # grabs url instead of content
-                    doc_id_to_url[doc_id_counter] = url
-                    doc_id_counter += 1
-                except Exception as e:
-                    print(f"Error processing {file_path}: {e}")
-    return doc_id_to_url
+def build_url_map():
+    with open(DOC_URL_MAP_FILE, 'r') as f:
+        data = json.load(f)
+    return {int(k): v for k, v in data.items()}
 
 def process_query(query):
     tokens = word_tokenize(query.lower())
@@ -72,7 +57,7 @@ def compute_idf(index, num_docs):
 
 def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
     scores = {}
-    search_result_set = set(search_result)
+    # search_result_set = set(search_result)
 
     # print("len(search_result):", len(search_result))
     for term in query_terms:
@@ -82,8 +67,8 @@ def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
 
         for posting in index[term]:
             docID = posting['docID']
-            if docID not in search_result_set:
-                continue
+            # if docID not in search_result_set:
+            #     continue
 
             # Calculate TF-IDF score
             tf = 1 + math.log(posting["term_freqs"])
@@ -166,6 +151,7 @@ def search():
     doc_lengths = {int(docID): length for docID, length in doc_lengths.items()}
 
     url_map = build_url_map()
+    # print(url_map[54462])
 
     # version that uses console input for queries rather than a set list
     while True:
@@ -175,29 +161,29 @@ def search():
 
         start_time = datetime.now()
         query_terms = process_query(query)
-        # t1 = datetime.now()
+        t1 = datetime.now()
 
         query_index = create_query_index(query_terms, offsets)
-        # t2 = datetime.now()
+        t2 = datetime.now()
 
         idf = compute_idf(query_index, len(url_map))
-        # t3 = datetime.now()
+        t3 = datetime.now()
 
         result = boolean_and_search(query_terms, query_index)
-        # t4 = datetime.now()
+        t4 = datetime.now()
 
         ranked_result = rank_by_tfidf(result, query_terms, query_index, idf, doc_lengths)
-        # t5 = datetime.now()
+        t5 = datetime.now()
         end_time = datetime.now()
 
         time_diff = (end_time - start_time).total_seconds() * 1000
         print("Search engine took", time_diff, "ms")
-        # print(f"process_query: {(t1 - start_time).total_seconds() * 1000:.2f} ms")
-        # print(f"create_query_index: {(t2 - t1).total_seconds() * 1000:.2f} ms")
-        # print(f"compute_idf: {(t3 - t2).total_seconds() * 1000:.2f} ms")
-        # print(f"boolean_and_search: {(t4 - t3).total_seconds() * 1000:.2f} ms")
-        # print(f"rank_by_tfidf: {(t5 - t4).total_seconds() * 1000:.2f} ms")
-        # print(f"TOTAL: {(t5 - start_time).total_seconds() * 1000:.2f} ms")
+        print(f"process_query: {(t1 - start_time).total_seconds() * 1000:.2f} ms")
+        print(f"create_query_index: {(t2 - t1).total_seconds() * 1000:.2f} ms")
+        print(f"compute_idf: {(t3 - t2).total_seconds() * 1000:.2f} ms")
+        print(f"boolean_and_search: {(t4 - t3).total_seconds() * 1000:.2f} ms")
+        print(f"rank_by_tfidf: {(t5 - t4).total_seconds() * 1000:.2f} ms")
+        print(f"TOTAL: {(t5 - start_time).total_seconds() * 1000:.2f} ms")
 
         print(f"\nQuery: {query}")
         print(f"Top 5 URLs:")
