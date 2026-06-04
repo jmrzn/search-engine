@@ -196,17 +196,26 @@ def add_to_index(doc_id, body_tokens, title_counts, h1_counts, h2_counts, h3_cou
     # Create a set of all unique terms that appear anywhere in the doc
     all_terms = set(term_freqs).union(title_counts, h1_counts, h2_counts, h3_counts, bold_counts)
 
-    # A posting for docID, term frequency, and title/headers/bold term frequency
+    # A posting for docID, term frequency, and title/headers/bold term frequency if > 0
     for term in all_terms:
-        local_index[term].append({
-            'docID': doc_id,
-            'term_freqs': term_freqs.get(term, 0),
-            'title_count': title_counts.get(term, 0),
-            'h1_count': h1_counts.get(term, 0),
-            'h2_count': h2_counts.get(term, 0),
-            'h3_count': h3_counts.get(term, 0),
-            'bold_count': bold_counts.get(term, 0)
-        })
+        posting = {'docID': doc_id, 'term_freqs': term_freqs.get(term, 0)}
+
+        if title_counts.get(term, 0):
+            posting["title_count"] = title_counts[term]
+
+        if h1_counts.get(term, 0):
+            posting["h1_count"] = h1_counts[term]
+
+        if h2_counts.get(term, 0):
+            posting["h2_count"] = h2_counts[term]
+
+        if h3_counts.get(term, 0):
+            posting["h3_count"] = h3_counts[term]
+
+        if bold_counts.get(term, 0):
+            posting["bold_count"] = bold_counts[term]
+
+        local_index[term].append(posting)
 
     # Store doc length (sum of term frequencies)
     doc_lengths[doc_id] = sum(term_freqs.values())
