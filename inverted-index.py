@@ -14,12 +14,12 @@ index = defaultdict(list)
 unique_tokens = set()
 doc_lengths = {}
 REPORT = "report.txt"
-DEV_FOLDER = "ANALYST"
+DEV_FOLDER = "DEV"
 stemmer = PorterStemmer()
 
 THRESHOLD = 500000
 PARTIAL_INDEX_DIR = "partial_indexes"
-FINAL_INDEX_FILE = "inverted_index_analyst.json"
+FINAL_INDEX_FILE = "inverted_index.json"
 OFFSETS_FILE = "index_offsets.json"
 DOC_LENGTHS_FILE = "doc_lengths.json"
 
@@ -118,12 +118,12 @@ def process_directory(root_path):
 
     # (Simhash, filepath, content_length) tuples for near-dup checking
     seen_hashes = []
-    SIMHASH_THRESHOLD = 1
+    SIMHASH_THRESHOLD = 3
     skipped = 0
     total = 0
     ADDED_PREVIEW_LIMIT = 5
-    SIDE_BY_SIDE_START = 400   # print full side-by-side comparison for first N skips
-    SIDE_BY_SIDE_END = 410
+    SIDE_BY_SIDE_START = 600
+    SIDE_BY_SIDE_END = 650
 
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
