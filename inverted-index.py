@@ -14,12 +14,12 @@ index = defaultdict(list)
 unique_tokens = set()
 doc_lengths = {}
 REPORT = "report.txt"
-DEV_FOLDER = "ANALYST"
+DEV_FOLDER = "DEV"
 stemmer = PorterStemmer()
 
 THRESHOLD = 500000
 PARTIAL_INDEX_DIR = "partial_indexes"
-FINAL_INDEX_FILE = "inverted_index_analyst.json"
+FINAL_INDEX_FILE = "inverted_index.json"
 OFFSETS_FILE = "index_offsets.json"
 DOC_LENGTHS_FILE = "doc_lengths.json"
 
@@ -40,7 +40,7 @@ def merge_partial_indexes(partial_files, output_file, offsets_file):
         with open(path, 'r') as f:
             data = json.load(f)
         iterators.append(iter(sorted(data.items())))
-
+ 
     # get the first entry from each partial index for merging
     firsts = [] 
     for i, it in enumerate(iterators):
@@ -48,14 +48,14 @@ def merge_partial_indexes(partial_files, output_file, offsets_file):
             firsts.append([next(it), i, it])
         except StopIteration:
             pass
-
+ 
     offsets = {}
-
+ 
     with open(output_file, 'w') as out:
         while firsts:
             # find the smallest term (lexicographically)
             min_term = min(f[0][0] for f in firsts)
-
+ 
             # get postings from all iterators that have the same min_term
             merged_postings = []
             new_firsts = []
@@ -70,15 +70,15 @@ def merge_partial_indexes(partial_files, output_file, offsets_file):
                 else:
                     new_firsts.append(entry)
             firsts = new_firsts
-
+ 
             # record byte offset + write this term's line to the index json file
             offsets[min_term] = out.tell()
             out.write(json.dumps({min_term: merged_postings}) + "\n")
- 
+    
     # save the offsets for later when searching
     with open(offsets_file, 'w') as f:
         json.dump(offsets, f)
-
+ 
     size_kb = os.path.getsize(output_file) / 1024
     print(f"Final index written to {output_file} ({size_kb:.2f} KB)")
     print(f"Offsets written to {offsets_file} ({len(offsets)} terms)")
@@ -87,7 +87,7 @@ def merge_partial_indexes(partial_files, output_file, offsets_file):
 def tokenize_text(text):
     result = []
     tokens = word_tokenize(text)
-
+    
     for token in tokens:
         token = token.lower()
         if not token.isalpha():
@@ -150,9 +150,11 @@ def extract_tag_counts(soup):
 
     return title_counts, h1_counts, h2_counts, h3_counts, bold_counts
 
+DOC_URL_MAP_FILE = "doc_url_map.json"
+
 def process_directory(root_path):
     doc_id_counter = 0
-
+    doc_url_map = {}
     # variables for partial indexing
     partial_index_num = 0
     local_index = defaultdict(list)
@@ -165,13 +167,13 @@ def process_directory(root_path):
     skipped = 0
     total = 0
     skip_log = open("simhash_skipped.txt", "w")
-
+ 
     # Iterate through domains in directory/root_path
     for domain in os.listdir(root_path):
         folder_path = os.path.join(root_path, domain)
         if not os.path.isdir(folder_path):
             continue
-     
+        
         # Iterate through each page/file in domain
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
@@ -179,6 +181,7 @@ def process_directory(root_path):
                 try:
                     data = json.load(f)
                     content = data.get("content", "")
+                    url = data.get("url", file_path)
                     soup = parse_content(content)
                     clean_text = soup.get_text()
                     total += 1
@@ -190,10 +193,10 @@ def process_directory(root_path):
                         matched_original = None
                         matched_distance = None
                         matched_content = None
-                        for seen_sh, seen_path, seen_content in seen_hashes:
+                        for seen_sh, seen_url, seen_content in seen_hashes:
                             d = sh.distance(seen_sh)
                             if d <= SIMHASH_THRESHOLD:
-                                matched_original = seen_path
+                                matched_original = seen_url
                                 matched_distance = d
                                 matched_content = seen_content
                                 break
@@ -201,7 +204,7 @@ def process_directory(root_path):
                         if matched_original is not None:
                             skipped += 1
                             print(f"Skipped duplicate ({skipped} skipped / {total} total) [distance={matched_distance}]", file=skip_log)
-                            print(f"  SKIP    ({len(main_content):>6} chars): {file_path}", file=skip_log)
+                            print(f"  SKIP    ({len(main_content):>6} chars): {url}", file=skip_log)
                             print(f"  MATCHED ({len(matched_content):>6} chars): {matched_original}", file=skip_log)
                             skip_preview    = main_content[:300].replace('\n', ' ')
                             matched_preview = matched_content[:300].replace('\n', ' ')
@@ -212,15 +215,17 @@ def process_directory(root_path):
                             print(file=skip_log)
                             continue
 
-                        seen_hashes.append((sh, file_path, main_content))
+                        seen_hashes.append((sh, url, main_content))
                     except (ValueError, OverflowError):
                         pass
 
                     body_tokens = tokenize_text(clean_text)
                     title_counts, h1_counts, h2_counts, h3_counts, bold_counts = extract_tag_counts(soup)
 
+                    doc_url_map[doc_id_counter] = url
                     add_to_index(doc_id_counter, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index)
-                    # print(f"Added doc {doc_id_counter} to index")
+                    doc_id_counter += 1
+                    print(f"Added doc {doc_id_counter} to index")
 
                     local_size += len(body_tokens)
                     doc_id_counter += 1
@@ -232,18 +237,21 @@ def process_directory(root_path):
                         partial_index_num += 1
                         local_index = defaultdict(list)
                         local_size = 0
-                     
+                        
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
- 
-    skip_log.close()
 
+    skip_log.close()
+    
     # flushes anything left in the local_index
     if local_index:
         path = flush_partial_index(local_index, partial_index_num)
         partial_files.append(path)
         partial_index_num += 1
- 
+
+    with open(DOC_URL_MAP_FILE, 'w') as f:
+        json.dump(doc_url_map, f)
+    
     print(f"\nSimHash deduplication: {skipped} pages skipped out of {total} total ({total - skipped} indexed)")
     return doc_id_counter, partial_files
 
