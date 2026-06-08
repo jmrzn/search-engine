@@ -4,9 +4,9 @@ from nltk import download
 
 download('punkt_tab')
 
-from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
-from bs4 import BeautifulSoup
+from nltk.tokenize import word_tokenize 
+from nltk.stem import PorterStemmer # cuts off common prefixes and suffixes
+from bs4 import BeautifulSoup 
 from collections import defaultdict
 
 index = defaultdict(list)
@@ -16,13 +16,15 @@ REPORT = "report.txt"
 DEV_FOLDER = "DEV"
 stemmer = PorterStemmer()
 
-THRESHOLD = 500000
+THRESHOLD = 500000 # first tried 5000 but was getting way too many partial indexes, this one gives around 54 or so
 PARTIAL_INDEX_DIR = "partial_indexes"
 FINAL_INDEX_FILE = "inverted_index.json"
 OFFSETS_FILE = "index_offsets.json"
 DOC_LENGTHS_FILE = "doc_lengths.json"
 
 def flush_partial_index(local_index, partial_index_num):
+    # called whenever the in-memory index grows too large
+    # saves the current in-memory index to disk as a numbered JSON file (like partial_3.json)
     os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
     path = os.path.join(PARTIAL_INDEX_DIR, f"partial_{partial_index_num}.json")
     # sort terms before writing so merging is easier later
@@ -33,6 +35,11 @@ def flush_partial_index(local_index, partial_index_num):
     return path
 
 def merge_partial_indexes(partial_files, output_file, offsets_file):
+    # combines all partial index files into one final index using a k-way merge
+    # reads all partial files + picks lexicographically smallest term across all partial files
+    # merges the posting lists for that term together + record the byte offset of each term so lookups can
+    # jump directly to a term without scanning the whole file
+    
     # load each partial file into memory to get iterators in sorted order
     iterators = []
     for path in partial_files:
@@ -84,6 +91,7 @@ def merge_partial_indexes(partial_files, output_file, offsets_file):
     return size_kb
 
 def tokenize_text(text):
+    # tokenize text using nltk tokenizer + porter stemmer 
     result = []
     tokens = word_tokenize(text)
     
@@ -96,11 +104,14 @@ def tokenize_text(text):
     return result
 
 def parse_content(content):
+    # detects whether content is XML or HTML and parses it with BeautifulSoup based on which one it is
     if content.strip().startswith("<?xml"):
         return BeautifulSoup(content, features="xml")
     return BeautifulSoup(content, "html.parser")
 
 def extract_tag_counts(soup):
+    # counts how often each token appears in specific HTML tags so it can be used to
+    # boost relevance scoring for terms in important positions
     title_counts = defaultdict(int)
     h1_counts = defaultdict(int)
     h2_counts = defaultdict(int)
@@ -135,6 +146,9 @@ def extract_tag_counts(soup):
     return title_counts, h1_counts, h2_counts, h3_counts, bold_counts
 
 def process_directory(root_path):
+    # walks through all domain folders and their files, parses each document, tokenizes it,
+    # and builds a local in-memory index. flushes to disk whenever the token count exceeds THRESHOLD
+    # returns the total document count and list of partial index file paths
     doc_id_counter = 0
     
     # variables for partial indexing
@@ -188,6 +202,10 @@ def process_directory(root_path):
     return doc_id_counter, partial_files
 
 def add_to_index(doc_id, body_tokens, title_counts, h1_counts, h2_counts, h3_counts, bold_counts, local_index):
+    # builds a posting for a single document and adds it to the local index 
+    # each posting records docID, body term frequency, and counts from special tags
+    # stores each document's total length to use later for ranking
+    
     # Calculate body term frequency
     term_freqs = defaultdict(int)
     for token in body_tokens:
