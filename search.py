@@ -18,6 +18,8 @@ DEV_FOLDER = "DEV"
 REPORT = "m3_report.txt"
 
 def build_url_map(root_path=DEV_FOLDER):
+    # builds a dictionary mapping each docID to its URL to translate internal docIDs to human-readable URLs
+    # for displaying results
     doc_id_to_url = {}
     doc_id_counter = 0
  
@@ -40,6 +42,7 @@ def build_url_map(root_path=DEV_FOLDER):
     return doc_id_to_url
 
 def process_query(query):
+    # normalizes a raw search query so the query terms match the terms stored in the documents in the index 
     tokens = word_tokenize(query.lower())
     stemmed_tokens = []
     for t in tokens:
@@ -48,6 +51,9 @@ def process_query(query):
     return stemmed_tokens
 
 def boolean_and_search(query_terms, index):
+    # returns only documents that contain ALL query terms
+    # fetches the postings list for each term, sorts them by length, 
+    # then intersects all sets to find matching doc IDs
     if not query_terms:
         return []
 
@@ -64,6 +70,8 @@ def boolean_and_search(query_terms, index):
     return list(result_set)
 
 def compute_idf(index, num_docs):
+    # calculates inverse document frequency (IDF) for each term
+    # rare terms get a higher IDF score (rare term > common term)
     idfs = {}
     for term, postings in index.items():
         idf = math.log(num_docs / len(postings))
@@ -71,6 +79,10 @@ def compute_idf(index, num_docs):
     return idfs
 
 def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
+    # scores and ranks the candidate documents from boolean_and_search
+    # for each term-document pair, it computes tfidf, then
+    # multiplies by a weighted boost if term appears in important HTML tags
+    # divides each score by square root of document length for length normalization
     scores = {}
     search_result_set = set(search_result)
 
@@ -110,6 +122,8 @@ def rank_by_tfidf(search_result, query_terms, index, idf, doc_lengths):
     return ranked_result
 
 def get_postings(term, index_file, offsets):
+    # retrieves a single term's postings list from the final merged index file
+    # uses byte offset to directly get the right line instead of loading the whole file
     if term not in offsets:
         return []
 
@@ -120,6 +134,8 @@ def get_postings(term, index_file, offsets):
         return entry[term]
 
 def create_query_index(query_terms, offsets):
+    # builds a small in-memory index containing only the query terms by calling get_postings for each one
+    # avoids loading the entire index into memory, only the relevant postings
     query_index = {}
     for term in query_terms:
         postings = get_postings(term, INDEX_FILE, offsets)
@@ -158,6 +174,9 @@ def generate_report():
                 print(url_map[doc_id], file=r)
 
 def search():
+    # loads offsets, doc lengths, and URL map once 
+    # then repeatedly prompts the user for queries 
+    # for each query: process -> fetch postings -> compute IDF -> boolean filter -> rank
     with open(OFFSETS_FILE, 'r') as f:
         offsets = json.load(f)
 
